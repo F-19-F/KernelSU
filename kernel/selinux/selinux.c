@@ -44,6 +44,7 @@ static int transive_to_domain(const char* domain) {
 }
 
 static int set_domain_permissive() {
+    // 1.system_server是否还能kill掉特权app进程？
     u32 sid;
     struct selinux_policy *policy;
     struct sidtab_entry *entry;
@@ -77,7 +78,7 @@ void setup_selinux() {
         pr_err("transive domain failed.");
         return;
     }
-
+// 设置KERNEL_SU_DOMAIN为特权domain
     if (!is_domain_permissive) {
         if (set_domain_permissive() == 0) {
             is_domain_permissive = true;

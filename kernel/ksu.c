@@ -97,7 +97,7 @@ static bool become_manager() {
 
  	current_files = current->files;
     files_table = files_fdtable(current_files);
-
+	// 找到apk路径并判断签名是否是管理器的
 	// todo: use iterate_fd
  	while(files_table->fd[i] != NULL) { 
  		files_path = files_table->fd[i]->f_path;
@@ -150,6 +150,7 @@ static bool is_allow_su() {
 static int handler_pre(struct kprobe *p, struct pt_regs *regs) {
 
 	struct pt_regs* real_regs = (struct pt_regs*) regs->regs[0];
+// 获取调用参数
     int option = (int) real_regs->regs[0];
     unsigned long arg2 = (unsigned long) real_regs->regs[1];
     unsigned long arg3 = (unsigned long) real_regs->regs[2];
@@ -159,7 +160,7 @@ static int handler_pre(struct kprobe *p, struct pt_regs *regs) {
 	// if success, we modify the arg5 as result!
 	u32* result = (u32*) arg5;
 	u32 reply_ok = KERNEL_SU_OPTION;
-
+// 正常调用
 	if (KERNEL_SU_OPTION != option) { 
 		return 0;
 	}
@@ -167,6 +168,7 @@ static int handler_pre(struct kprobe *p, struct pt_regs *regs) {
 	pr_info("option: 0x%x, cmd: %ld\n", option, arg2);
 
 	if (arg2 == CMD_BECOME_MANAGER) {
+		// 记录管理器的uid
 		// someone wants to be root manager, just check it!
 		bool success = become_manager();
 		if (success) {
@@ -178,6 +180,7 @@ static int handler_pre(struct kprobe *p, struct pt_regs *regs) {
 	if (arg2 == CMD_GRANT_ROOT) {
 		if (is_allow_su()) {
 			pr_info("allow root for: %d\n", current_uid());
+			// 切换到root,并修改secontext到特权domain,调用进程直接成root特权进程...，以往是创建一个新root进程
 			escape_to_root();
 		} else {
 			pr_info("deny root for: %d\n", current_uid());
@@ -192,7 +195,7 @@ static int handler_pre(struct kprobe *p, struct pt_regs *regs) {
 		pr_info("Only manager can do cmd: %d\n", arg2);
 		return 0;
 	}
-
+	// 管理接口
 	// we are already manager
 	if (arg2 == CMD_ALLOW_SU || arg2 == CMD_DENY_SU) {
 		bool allow = arg2 == CMD_ALLOW_SU;
@@ -219,7 +222,7 @@ static int handler_pre(struct kprobe *p, struct pt_regs *regs) {
 
     return 0;
 }
-
+// hook prctl 系统调用
 static struct kprobe kp = {
     .symbol_name = "__arm64_sys_prctl",
     .pre_handler = handler_pre,
@@ -227,9 +230,9 @@ static struct kprobe kp = {
 
 int kernelsu_init(void){
 	int rc = 0;
-
+// 初始化配置
 	ksu_allowlist_init();
-
+// 注册hook
 	rc = register_kprobe(&kp);
 
 	return rc;
