@@ -10,8 +10,6 @@
 #include "../arch.h"
 
 #if LINUX_VERSION_CODE < KERNEL_VERSION(4, 14, 0)
-static const char *init_domain = INIT_DOMAIN;
-static const char *su_domain = KERNEL_SU_DOMAIN;
 
 int ksu_handle_security_bounded_transition(u32 *old_sid, u32 *new_sid) {
 	u32 init_sid, su_sid;

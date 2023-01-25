@@ -72,6 +72,9 @@ void apply_kernelsu_rules()
 	ksu_allow(db, "kernel", "system_server", "fd", "use");
 	// we need to read /data/system/packages.list
 	ksu_allow(db, "kernel", "kernel", "capability", "dac_override");
+#ifndef FILP_OPEN_WORKS_IN_WORKER
+	ksu_allow(db, "kernel", "system_server", "fd", "use");
+#endif
 	// Android 10+:
 	// http://aospxref.com/android-12.0.0_r3/xref/system/sepolicy/private/file_contexts#512
 	ksu_allow(db, "kernel", "packages_list_file", "file", ALL);

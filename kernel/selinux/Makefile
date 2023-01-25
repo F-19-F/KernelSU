@@ -1,6 +1,7 @@
 obj-y += selinux.o
 obj-y += sepolicy.o
 obj-y += rules.o
+obj-y += cred.o
 obj-y += kernel_compat.o
 
 

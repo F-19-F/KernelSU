@@ -24,15 +24,14 @@ struct perm_data {
 
 static struct list_head allow_list;
 
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 10, 0)
 #define KERNEL_SU_ALLOWLIST "/data/adb/ksu/.allowlist"
-#else
-// filp_open returns error with encrypted files on kernel 4.4.y and 4.9.y
-#define KERNEL_SU_ALLOWLIST "/data/user_de/.ksu_allowlist"
-#endif
 
 static struct work_struct ksu_save_work;
 static struct work_struct ksu_load_work;
+#ifndef FILP_OPEN_WORKS_IN_WORKER
+static struct file *fp;
+static DEFINE_MUTEX(fp_mutex);
+#endif
 
 bool persistent_allow_list(void);
 
@@ -127,6 +126,7 @@ void do_persistent_allow_list(struct work_struct *work)
 	struct list_head *pos = NULL;
 	loff_t off = 0;
 
+#ifdef FILP_OPEN_WORKS_IN_WORKER
 	struct file *fp =
 		filp_open(KERNEL_SU_ALLOWLIST, O_WRONLY | O_CREAT, 0644);
 
@@ -134,15 +134,20 @@ void do_persistent_allow_list(struct work_struct *work)
 		pr_err("save_allow_list creat file failed: %d\n", PTR_ERR(fp));
 		return;
 	}
+#else
+	mutex_lock(&fp_mutex);
+	if (!fp) {
+		pr_err("save_allow_list fp wasn't opened successfully\n");
+		goto exit;
+	}
+#endif
 
 	// store magic and version
-	if (kernel_write_compat(fp, &magic, sizeof(magic), &off) != sizeof(magic)) {
 	if (kernel_write_compat(fp, &magic, sizeof(magic), &off) != sizeof(magic)) {
 		pr_err("save_allow_list write magic failed.\n");
 		goto exit;
 	}
 
-	if (kernel_write_compat(fp, &version, sizeof(version), &off) !=
 	if (kernel_write_compat(fp, &version, sizeof(version), &off) !=
 	    sizeof(version)) {
 		pr_err("save_allow_list write version failed.\n");
@@ -160,18 +165,25 @@ void do_persistent_allow_list(struct work_struct *work)
 	}
 
 exit:
+#ifdef FILP_OPEN_WORKS_IN_WORKER
 	filp_close(fp, 0);
+#else
+	mutex_unlock(&fp_mutex);
+#endif
 }
 
 void do_load_allow_list(struct work_struct *work)
 {
 	loff_t off = 0;
 	ssize_t ret = 0;
+#ifdef FILP_OPEN_WORKS_IN_WORKER
 	struct file *fp = NULL;
+#endif
 	u32 magic;
 	u32 version;
 
-	fp = filp_open("/data/adb", O_RDONLY, 0);
+#ifdef FILP_OPEN_WORKS_IN_WORKER
+	fp = filp_open("/data/adb/", O_RDONLY, 0);
 	if (IS_ERR(fp)) {
 		int errno = PTR_ERR(fp);
 		pr_err("load_allow_list open '/data/adb': %d\n", PTR_ERR(fp));
@@ -204,16 +216,21 @@ void do_load_allow_list(struct work_struct *work)
 #endif
 		return;
 	}
+#else
+	mutex_lock(&fp_mutex);
+	if (!fp) {
+		pr_err("load_allow_list fp wasn't opened successfully\n");
+		goto unlock;
+	}
+#endif /* FILP_OPEN_WORKS_IN_WORKER */
 
 	// verify magic
-	if (kernel_read_compat(fp, &magic, sizeof(magic), &off) != sizeof(magic) ||
 	if (kernel_read_compat(fp, &magic, sizeof(magic), &off) != sizeof(magic) ||
 	    magic != FILE_MAGIC) {
 		pr_err("allowlist file invalid: %d!\n", magic);
 		goto exit;
 	}
 
-	if (kernel_read_compat(fp, &version, sizeof(version), &off) !=
 	if (kernel_read_compat(fp, &version, sizeof(version), &off) !=
 	    sizeof(version)) {
 		pr_err("allowlist read version: %d failed\n", version);
@@ -226,12 +243,10 @@ void do_load_allow_list(struct work_struct *work)
 		u32 uid;
 		bool allow = false;
 		ret = kernel_read_compat(fp, &uid, sizeof(uid), &off);
-		ret = kernel_read_compat(fp, &uid, sizeof(uid), &off);
 		if (ret <= 0) {
 			pr_info("load_allow_list read err: %d\n", ret);
 			break;
 		}
-		ret = kernel_read_compat(fp, &allow, sizeof(allow), &off);
 		ret = kernel_read_compat(fp, &allow, sizeof(allow), &off);
 
 		pr_info("load_allow_uid: %d, allow: %d\n", uid, allow);
@@ -241,7 +256,12 @@ void do_load_allow_list(struct work_struct *work)
 
 exit:
 	ksu_show_allow_list();
+#ifdef FILP_OPEN_WORKS_IN_WORKER
 	filp_close(fp, 0);
+#else
+unlock:
+	mutex_unlock(&fp_mutex);
+#endif
 }
 
 void ksu_prune_allowlist(bool (*is_uid_exist)(uid_t, void *), void *data)
@@ -271,11 +291,47 @@ void ksu_prune_allowlist(bool (*is_uid_exist)(uid_t, void *), void *data)
 // make sure allow list works cross boot
 bool persistent_allow_list(void)
 {
+#ifndef FILP_OPEN_WORKS_IN_WORKER
+	mutex_lock(&fp_mutex);
+	if (fp)
+		filp_close(fp, 0);
+	fp = filp_open(KERNEL_SU_ALLOWLIST, O_WRONLY | O_CREAT, 0644);
+
+	if (IS_ERR(fp)) {
+		pr_err("persistent_allow_list creat file failed: %d\n", PTR_ERR(fp));
+		fp = NULL;
+		mutex_unlock(&fp_mutex);
+		return false;
+	}
+	mutex_unlock(&fp_mutex);
+#endif
 	return ksu_queue_work(&ksu_save_work);
 }
 
 bool ksu_load_allow_list(void)
 {
+#ifndef FILP_OPEN_WORKS_IN_WORKER
+	mutex_lock(&fp_mutex);
+	if (fp)
+		filp_close(fp, 0);
+
+	// load allowlist now!
+	fp = filp_open(KERNEL_SU_ALLOWLIST, O_RDONLY, 0);
+
+	if (IS_ERR(fp)) {
+		int errno = PTR_ERR(fp);
+		fp = NULL;
+		mutex_unlock(&fp_mutex);
+#ifdef CONFIG_KSU_DEBUG
+		if (errno == -ENOENT)
+			ksu_allow_uid(2000, true,
+				      true); // allow adb shell by default
+#endif
+		pr_err("ksu_load_allow_list open file failed: %d\n", errno);
+		return false;
+	}
+	mutex_unlock(&fp_mutex);
+#endif /* FILP_OPEN_WORKS_IN_WORKER */
 	return ksu_queue_work(&ksu_load_work);
 }
 
@@ -301,4 +357,13 @@ void ksu_allowlist_exit(void)
 		kfree(np);
 	}
 	mutex_unlock(&allowlist_mutex);
+
+#ifndef FILP_OPEN_WORKS_IN_WORKER
+	mutex_lock(&fp_mutex);
+	if (fp) {
+		filp_close(fp, 0);
+		fp = NULL;
+	}
+	mutex_unlock(&fp_mutex);
+#endif
 }

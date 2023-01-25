@@ -53,14 +53,7 @@ void setenforce(bool enforce)
 {
 #if LINUX_VERSION_CODE > KERNEL_VERSION(4, 14, 0)
 #ifdef CONFIG_SECURITY_SELINUX_DEVELOP
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 17, 0)
 	selinux_state.enforcing = enforce;
-#else
-	selinux_enabled = enforce;
-#endif
-#endif
-#else
-    selinux_enabled = enforce;
 #endif
 #else
     selinux_enabled = enforce;
@@ -71,23 +64,15 @@ bool getenforce()
 {
 #if LINUX_VERSION_CODE > KERNEL_VERSION(4, 14, 0)
 #ifdef CONFIG_SECURITY_SELINUX_DISABLE
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 17, 0)
 	if (selinux_state.disabled) {
-#else
-	if (selinux_disabled) {
-#endif
 		return false;
 	}
 #endif
 
 #ifdef CONFIG_SECURITY_SELINUX_DEVELOP
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 17, 0)
 	return selinux_state.enforcing;
 #else
-	return selinux_enabled;
-#endif
-#else
-	return true;
+	return false;
 #endif
 #else
     return selinux_enabled;

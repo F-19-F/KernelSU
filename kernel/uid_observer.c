@@ -73,13 +73,11 @@ static void do_update_uid(struct work_struct *work)
 	char buf[128];
 	for (;;) {
 		ssize_t count = kernel_read_compat(fp, &chr, sizeof(chr), &pos);
-		ssize_t count = kernel_read_compat(fp, &chr, sizeof(chr), &pos);
 		if (count != sizeof(chr))
 			break;
 		if (chr != '\n')
 			continue;
 
-		count = kernel_read_compat(fp, buf, sizeof(buf), &line_start);
 		count = kernel_read_compat(fp, buf, sizeof(buf), &line_start);
 
 		struct uid_data *data =
