@@ -5,8 +5,10 @@
 #include "linux/printk.h"
 #include "linux/slab.h"
 #include "linux/version.h"
+#include "linux/version.h"
 #include "klog.h" // IWYU pragma: keep
 #include "selinux/selinux.h"
+#include "kernel_compat.h"
 #include "kernel_compat.h"
 
 #define FILE_MAGIC 0x7f4b5355 // ' KSU', u32
@@ -135,10 +137,12 @@ void do_persistent_allow_list(struct work_struct *work)
 
 	// store magic and version
 	if (kernel_write_compat(fp, &magic, sizeof(magic), &off) != sizeof(magic)) {
+	if (kernel_write_compat(fp, &magic, sizeof(magic), &off) != sizeof(magic)) {
 		pr_err("save_allow_list write magic failed.\n");
 		goto exit;
 	}
 
+	if (kernel_write_compat(fp, &version, sizeof(version), &off) !=
 	if (kernel_write_compat(fp, &version, sizeof(version), &off) !=
 	    sizeof(version)) {
 		pr_err("save_allow_list write version failed.\n");
@@ -149,6 +153,8 @@ void do_persistent_allow_list(struct work_struct *work)
 		p = list_entry(pos, struct perm_data, list);
 		pr_info("save allow list uid :%d, allow: %d\n", p->uid,
 			p->allow);
+		kernel_write_compat(fp, &p->uid, sizeof(p->uid), &off);
+		kernel_write_compat(fp, &p->allow, sizeof(p->allow), &off);
 		kernel_write_compat(fp, &p->uid, sizeof(p->uid), &off);
 		kernel_write_compat(fp, &p->allow, sizeof(p->allow), &off);
 	}
@@ -201,11 +207,13 @@ void do_load_allow_list(struct work_struct *work)
 
 	// verify magic
 	if (kernel_read_compat(fp, &magic, sizeof(magic), &off) != sizeof(magic) ||
+	if (kernel_read_compat(fp, &magic, sizeof(magic), &off) != sizeof(magic) ||
 	    magic != FILE_MAGIC) {
 		pr_err("allowlist file invalid: %d!\n", magic);
 		goto exit;
 	}
 
+	if (kernel_read_compat(fp, &version, sizeof(version), &off) !=
 	if (kernel_read_compat(fp, &version, sizeof(version), &off) !=
 	    sizeof(version)) {
 		pr_err("allowlist read version: %d failed\n", version);
@@ -218,10 +226,12 @@ void do_load_allow_list(struct work_struct *work)
 		u32 uid;
 		bool allow = false;
 		ret = kernel_read_compat(fp, &uid, sizeof(uid), &off);
+		ret = kernel_read_compat(fp, &uid, sizeof(uid), &off);
 		if (ret <= 0) {
 			pr_info("load_allow_list read err: %d\n", ret);
 			break;
 		}
+		ret = kernel_read_compat(fp, &allow, sizeof(allow), &off);
 		ret = kernel_read_compat(fp, &allow, sizeof(allow), &off);
 
 		pr_info("load_allow_uid: %d, allow: %d\n", uid, allow);

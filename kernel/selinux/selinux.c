@@ -62,6 +62,9 @@ void setenforce(bool enforce)
 #else
     selinux_enabled = enforce;
 #endif
+#else
+    selinux_enabled = enforce;
+#endif
 }
 
 bool getenforce()
