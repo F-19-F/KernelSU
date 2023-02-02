@@ -142,4 +142,30 @@ You should found the four functions in kernel source:
 3. vfs_read, usually in `fs/read_write.c`
 4. vfs_statx, usually in `fs/stat.c`
 
+If your kernel is earlier than 4.14, one extra call in `security/selinux/ss/services.c` is required:
+
+```diff
+diff --git a/security/selinux/ss/services.c b/security/selinux/ss/services.c
+index bfc4ffa1fa1a..ffaf7b51a6ff 100644
+--- a/security/selinux/ss/services.c
++++ b/security/selinux/ss/services.c
+@@ -838,6 +838,8 @@ int security_validate_transition(u32 oldsid, u32 newsid, u32 tasksid,
+                                                orig_tclass, false);
+ }
+ 
++extern int ksu_handle_security_bounded_transition(u32 *old_sid, u32 *new_sid);
++
+ /*
+  * security_bounded_transition - check whether the given
+  * transition is directed to bounded, or not.
+@@ -854,5 +856,7 @@ int security_bounded_transition(u32 old_sid, u32 new_sid)
+        int index;
+        int rc;
+ 
++       ksu_handle_security_bounded_transition(&old_sid, &new_sid);
++
+        if (!ss_initialized)
+                return 0;
+```
+
 Finally, build your kernel again, KernelSU should works well.

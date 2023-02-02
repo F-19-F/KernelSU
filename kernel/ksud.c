@@ -16,6 +16,10 @@
 #include "ksud.h"
 #include "selinux/selinux.h"
 
+#if defined(CONFIG_KPROBES) && LINUX_VERSION_CODE < KERNEL_VERSION(4, 14, 0)
+#define APPLY_RULES_IN_WORKER
+#endif
+
 static const char KERNEL_SU_RC[] =
 	"\n"
 
@@ -40,6 +44,9 @@ static const char KERNEL_SU_RC[] =
 
 static void stop_vfs_read_hook();
 static void stop_execve_hook();
+#ifdef APPLY_RULES_IN_WORKER
+static void ksu_apply_rules();
+#endif
 
 #ifdef CONFIG_KPROBES
 static struct work_struct stop_vfs_read_work;
@@ -47,6 +54,10 @@ static struct work_struct stop_execve_hook_work;
 #else
 static bool vfs_read_hook = true;
 static bool execveat_hook = true;
+#endif
+
+#ifdef APPLY_RULES_IN_WORKER
+static struct work_struct apply_rules_work;
 #endif
 
 void on_post_fs_data(void)
@@ -91,7 +102,11 @@ int ksu_handle_execveat_ksud(int *fd, struct filename **filename_ptr,
 			// 1: /system/bin/init selinux_setup
 			// 2: /system/bin/init second_stage
 			pr_info("/system/bin/init second_stage executed\n");
+#ifdef APPLY_RULES_IN_WORKER
+			ksu_apply_rules();
+#else
 			apply_kernelsu_rules();
+#endif
 		}
 	}
 
@@ -212,11 +227,9 @@ static int read_handler_pre(struct kprobe *p, struct pt_regs *regs)
 static struct kprobe execve_kp = {
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 9, 0)
 	.symbol_name = "do_execveat_common",
-#elif LINUX_VERSION_CODE >= KERNEL_VERSION(4, 19, 0) &&                        \
-	LINUX_VERSION_CODE < KERNEL_VERSION(5, 9, 0)
+#elif LINUX_VERSION_CODE >= KERNEL_VERSION(4, 19, 0)
 	.symbol_name = "__do_execve_file",
-#elif LINUX_VERSION_CODE >= KERNEL_VERSION(4, 4, 0) &&                        \
-	LINUX_VERSION_CODE < KERNEL_VERSION(4, 19, 0)
+#elif LINUX_VERSION_CODE >= KERNEL_VERSION(3, 19, 0)
 	.symbol_name = "do_execveat_common",
 #endif
 	.pre_handler = execve_handler_pre,
@@ -236,6 +249,13 @@ static void do_stop_execve_hook(struct work_struct *work)
 {
 	unregister_kprobe(&execve_kp);
 }
+
+#ifdef APPLY_RULES_IN_WORKER
+static void do_apply_kernelsu_rules(struct work_struct *work)
+{
+	apply_kernelsu_rules();
+}
+#endif
 #endif
 
 static void stop_vfs_read_hook()
@@ -258,6 +278,14 @@ static void stop_execve_hook()
 #endif
 }
 
+#ifdef APPLY_RULES_IN_WORKER
+static void ksu_apply_rules()
+{
+	bool ret = schedule_work(&apply_rules_work);
+	pr_info("apply kernelsu rules: %d!\n", ret);
+}
+#endif
+
 // ksud: module support
 void ksu_enable_ksud()
 {
@@ -272,5 +300,8 @@ void ksu_enable_ksud()
 
 	INIT_WORK(&stop_vfs_read_work, do_stop_vfs_read_hook);
 	INIT_WORK(&stop_execve_hook_work, do_stop_execve_hook);
+#ifdef APPLY_RULES_IN_WORKER
+	INIT_WORK(&apply_rules_work, do_apply_kernelsu_rules);
+#endif
 #endif
 }

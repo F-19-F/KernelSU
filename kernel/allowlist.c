@@ -22,10 +22,10 @@ struct perm_data {
 
 static struct list_head allow_list;
 
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 5, 0)
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 10, 0)
 #define KERNEL_SU_ALLOWLIST "/data/adb/ksu/.allowlist"
 #else
-// filp_open return error if under encryption dir on Kernel4.4
+// filp_open returns error with encrypted files on kernel 4.4.y and 4.9.y
 #define KERNEL_SU_ALLOWLIST "/data/user_de/.ksu_allowlist"
 #endif
 
