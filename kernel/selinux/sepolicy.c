@@ -7,11 +7,6 @@
 #include "../klog.h" // IWYU pragma: keep
 #include "ss/symtab.h"
 
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 10, 0)
-// TODO: backport to lower kernel
-#define KSU_SUPPORT_ADD_TYPE
-#endif
-
 //////////////////////////////////////////////////////
 // Declaration
 //////////////////////////////////////////////////////
@@ -78,9 +73,10 @@ static bool add_typeattribute(struct policydb *db, const char *type,
 	hash_for_each (htab->htable, htab->size, cur)
 #endif
 
-// symtab_search is introduced on 5.9.0:
+// symtab_{insert,search} were introduced in 5.9.0:
 // https://elixir.bootlin.com/linux/v5.9-rc1/source/security/selinux/ss/symtab.h
 #if LINUX_VERSION_CODE < KERNEL_VERSION(5, 9, 0)
+#define symtab_insert(s, name, datum) hashtab_insert((s)->table, name, datum)
 #define symtab_search(s, name) hashtab_search((s)->table, name)
 #endif
 
@@ -456,7 +452,7 @@ static bool add_type_rule(struct policydb *db, const char *s, const char *t,
 	return true;
 }
 
-#ifdef KSU_SUPPORT_ADD_TYPE
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 9, 0)
 static u32 filenametr_hash(const void *k)
 {
 	const struct filename_trans_key *ft = k;
@@ -500,7 +496,6 @@ static bool add_filename_trans(struct policydb *db, const char *s,
 			       const char *t, const char *c, const char *d,
 			       const char *o)
 {
-#ifdef KSU_SUPPORT_ADD_TYPE
 	struct type_datum *src, *tgt, *def;
 	struct class_datum *cls;
 
@@ -525,6 +520,7 @@ static bool add_filename_trans(struct policydb *db, const char *s,
 		return false;
 	}
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 9, 0)
 	struct filename_trans_key key;
 	key.ttype = tgt->value;
 	key.tclass = cls->value;
@@ -560,7 +556,36 @@ static bool add_filename_trans(struct policydb *db, const char *s,
 	db->compat_filename_trans_count++;
 	return ebitmap_set_bit(&trans->stypes, src->value - 1, 1) == 0;
 #else
-	return false;
+	struct filename_trans *ft;
+
+	ft = (struct filename_trans *) kmalloc(sizeof(struct filename_trans),
+						GFP_ATOMIC);
+
+	if (!ft) {
+		pr_err("add_filename_trans: alloc filename_trans failed.\n");
+		return false;
+	}
+
+	ft->name = kstrdup((char *)o, GFP_ATOMIC);
+	ft->stype = src->value;
+	ft->ttype = tgt->value;
+	ft->tclass = cls->value;
+
+	struct filename_trans_datum *otype;
+
+	otype = (struct filename_trans_datum *) kmalloc(sizeof(*otype),
+							GFP_ATOMIC);
+
+	if (!otype) {
+		pr_err("add_filename_trans: alloc filename_trans_datum failed.\n");
+		return false;
+	}
+
+	otype->otype = def->value;
+
+	hashtab_insert(db->filename_trans, ft, otype);
+
+	return true;
 #endif
 }
 
@@ -572,7 +597,7 @@ static bool add_genfscon(struct policydb *db, const char *fs_name,
 
 static bool add_type(struct policydb *db, const char *type_name, bool attr)
 {
-#ifdef KSU_SUPPORT_ADD_TYPE
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 1, 0)
 	struct type_datum *type = symtab_search(&db->p_types, type_name);
 	if (type) {
 		pr_warn("Type %s already exists\n", type_name);
