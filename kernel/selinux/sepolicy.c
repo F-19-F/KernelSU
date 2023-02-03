@@ -581,7 +581,7 @@ static bool add_type(struct policydb *db, const char *type_name, bool attr)
 
 	u32 value = ++db->p_types.nprim;
 	type = (struct type_datum *)kmalloc(sizeof(struct type_datum),
-					    GFP_ATOMIC);
+					    GFP_ATOMIC | __GFP_ZERO);
 	if (!type) {
 		pr_err("add_type: alloc type_datum failed.\n");
 		return false;
