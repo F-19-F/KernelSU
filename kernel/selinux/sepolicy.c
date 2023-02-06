@@ -354,7 +354,7 @@ static void add_xperm_rule_raw(struct policydb *db, struct type_datum *src,
 		if (datum->u.xperms == NULL) {
 			datum->u.xperms =
 				(struct avtab_extended_perms *)(kmalloc(
-					sizeof(xperms), GFP_KERNEL));
+					sizeof(xperms), GFP_ATOMIC));
 			if (!datum->u.xperms) {
 				pr_err("alloc xperms failed\n");
 				return;
@@ -675,7 +675,7 @@ static bool add_type(struct policydb *db, const char *type_name, bool attr)
 	char **new_val_to_name_types =
 		krealloc(db->sym_val_to_name[SYM_TYPES],
 			 sizeof(char *) * db->symtab[SYM_TYPES].nprim,
-			 GFP_KERNEL);
+			 GFP_ATOMIC);
 #else
 	struct flex_array *new_val_to_name_types = flex_array_alloc(sizeof(char *),
 		db->symtab[SYM_TYPES].nprim, GFP_ATOMIC | __GFP_ZERO);
