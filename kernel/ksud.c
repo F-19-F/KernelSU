@@ -44,6 +44,7 @@ static void stop_execve_hook();
 #ifdef CONFIG_KPROBES
 static struct work_struct stop_vfs_read_work;
 static struct work_struct stop_execve_hook_work;
+static struct work_struct apply_rules_work;
 #else
 static bool vfs_read_hook = true;
 static bool execveat_hook = true;
@@ -91,7 +92,7 @@ int ksu_handle_execveat_ksud(int *fd, struct filename **filename_ptr,
 			// 1: /system/bin/init selinux_setup
 			// 2: /system/bin/init second_stage
 			pr_info("/system/bin/init second_stage executed\n");
-			apply_kernelsu_rules();
+			ksu_queue_work(&apply_rules_work);
 		}
 	}
 
@@ -234,6 +235,12 @@ static void do_stop_execve_hook(struct work_struct *work)
 {
 	unregister_kprobe(&execve_kp);
 }
+
+static void do_apply_rules(struct work_struct *work)
+{
+	apply_kernelsu_rules();
+}
+
 #endif
 
 static void stop_vfs_read_hook()
@@ -270,5 +277,6 @@ void ksu_enable_ksud()
 
 	INIT_WORK(&stop_vfs_read_work, do_stop_vfs_read_hook);
 	INIT_WORK(&stop_execve_hook_work, do_stop_execve_hook);
+	INIT_WORK(&apply_rules_work, do_apply_rules);
 #endif
 }
